@@ -20,6 +20,8 @@ This folder contains a read-only MCP server for the IONOS mailbox `info@infinisi
 
 Lists unread emails from the configured mailbox without changing mailbox state.
 
+This implementation only fetches unread messages and does not scan the full mailbox.
+
 Returned fields:
 
 - `uid`
@@ -33,6 +35,8 @@ Returned fields:
 ### `email_digest_today(limit)`
 
 Builds a simple digest of unread emails dated today.
+
+This implementation is built on the same unread-only fetch path and does not scan the full mailbox.
 
 Returned output:
 
@@ -77,8 +81,7 @@ IONOS_MAX_BODY_CHARS=4000
 
 - `.env` is loaded relative to `server.mjs`, not the process working directory
 - this fix was necessary because Codex launches MCP servers from a different working directory
-- German IONOS mailbox access worked with `imap.ionos.de`
-- `imap.ionos.com` failed authentication in this setup
+- German IONOS mailbox access is configured and documented with `imap.ionos.de`
 
 ## Verified Working
 

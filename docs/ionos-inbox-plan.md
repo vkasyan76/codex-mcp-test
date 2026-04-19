@@ -16,6 +16,6 @@ Goal: build a read-only MCP server for `info@infinisimo.com` that can list unrea
 
 ## Runtime Notes
 
-- IMAP host: `imap.ionos.com`
+- IMAP host: `imap.ionos.de`
 - Port: `993`
 - TLS: enabled

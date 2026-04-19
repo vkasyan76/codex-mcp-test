@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Read-only MCP server for IONOS inbox unread listing and daily digests.",
   "main": "server.mjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.mjs",
     "check": "node --check server.mjs"

@@ -12,16 +12,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load mailbox credentials and runtime options from the local MCP folder.
 dotenv.config({ path: path.join(__dirname, ".env") });
 
-const LimitSchema = z.object({
-  limit: z.number().int().min(1).max(50).default(10),
-});
-
+// Environment schema for the local IONOS mailbox configuration.
 const ENV_SCHEMA = z.object({
   IONOS_EMAIL: z.string().min(1),
   IONOS_PASSWORD: z.string().min(1),
-  IONOS_IMAP_HOST: z.string().min(1).default("imap.ionos.com"),
+  IONOS_IMAP_HOST: z.string().min(1).default("imap.ionos.de"),
   IONOS_IMAP_PORT: z.coerce.number().int().positive().default(993),
   IONOS_IMAP_SECURE: z
     .string()
@@ -35,6 +33,7 @@ function loadConfig() {
   return ENV_SCHEMA.parse(process.env);
 }
 
+// Helpers for turning raw email bodies into compact, readable text output.
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -94,6 +93,7 @@ async function parseMessage(raw, maxBodyChars) {
   };
 }
 
+// Lightweight heuristics for summaries, urgency, and category labels.
 function summarizeBody(body) {
   if (!body) {
     return "No readable body text.";
@@ -108,7 +108,8 @@ function summarizeBody(body) {
 }
 
 function urgencyHint(email) {
-  const haystack = `${email.subject} ${email.body}`.toLowerCase();
+  // Use safe fallbacks so classification still works on partial/empty messages.
+  const haystack = `${email.subject || ""} ${email.body || ""}`.toLowerCase();
 
   if (/\b(urgent|asap|immediately|refund|chargeback|failed|error|broken|cannot|can't)\b/.test(haystack)) {
     return "high";
@@ -117,6 +118,40 @@ function urgencyHint(email) {
     return "medium";
   }
   return "normal";
+}
+
+function classifyEmail(email) {
+  const from = (email.from || "").toLowerCase();
+  // Use safe fallbacks so heuristic labels do not depend on both fields existing.
+  const haystack = `${email.subject || ""} ${email.body || ""}`.toLowerCase();
+
+  // V1 classification is heuristic and additive only: we label messages,
+  // but we do not filter them out of unread results yet.
+  if (
+    from.includes("noreply@ionos.de") ||
+    from.includes("noreply-dmarc-support@google.com") ||
+    /\b(dmarc|spam report|spambericht|report-id)\b/.test(haystack)
+  ) {
+    return "spam_report";
+  }
+
+  if (/\b(invoice|billing|payment|charge|refund|subscription)\b/.test(haystack)) {
+    return "billing";
+  }
+
+  if (/\b(error|bug|broken|failed|exception|not working)\b/.test(haystack)) {
+    return "bug";
+  }
+
+  if (/\b(provider|partnership|listing|onboarding|vendor)\b/.test(haystack)) {
+    return "provider_inquiry";
+  }
+
+  if (/\b(help|support|booking|reservation|cancel)\b/.test(haystack)) {
+    return "support";
+  }
+
+  return "general";
 }
 
 function isSameLocalDay(dateValue, now = new Date()) {
@@ -132,6 +167,7 @@ function isSameLocalDay(dateValue, now = new Date()) {
   );
 }
 
+// Open the mailbox in read-only mode for every tool call.
 async function withMailbox(callback) {
   const config = loadConfig();
   const client = new ImapFlow({
@@ -154,17 +190,13 @@ async function withMailbox(callback) {
   }
 }
 
+// Fetch unread messages, parse them, and attach lightweight metadata for MCP output.
 async function fetchUnreadMessages(limit) {
   return withMailbox(async (client, config) => {
-    const sequenceNumbers = [];
-
-    for await (const message of client.fetch("1:*", { uid: true, flags: true })) {
-      if (!message.flags?.has("\\Seen")) {
-        sequenceNumbers.push(message.uid);
-      }
-    }
-
-    const selectedUids = sequenceNumbers.slice(-limit).reverse();
+    // Read-only v1 behavior: fetch only unread messages, not the full mailbox.
+    const unreadUids = (await client.search({ seen: false }, { uid: true }))
+      .sort((a, b) => a - b);
+    const selectedUids = unreadUids.slice(-limit).reverse();
     const emails = [];
 
     if (!selectedUids.length) {
@@ -172,11 +204,11 @@ async function fetchUnreadMessages(limit) {
     }
 
     for await (const message of client.fetch(selectedUids, {
-      uid: true,
       envelope: true,
       source: true,
-    })) {
+    }, { uid: true })) {
       const parsed = await parseMessage(message.source, config.IONOS_MAX_BODY_CHARS);
+      const category = classifyEmail(parsed);
       emails.push({
         uid: message.uid,
         from: parsed.from,
@@ -186,6 +218,7 @@ async function fetchUnreadMessages(limit) {
         body: parsed.body,
         hasAttachments: parsed.hasAttachments,
         attachments: parsed.attachments,
+        category,
       });
     }
 
@@ -199,6 +232,7 @@ async function fetchUnreadMessages(limit) {
   });
 }
 
+// MCP responses are returned as plain text payloads for now.
 function textResult(value) {
   return {
     content: [
@@ -215,6 +249,7 @@ const server = new McpServer({
   version: "0.1.0",
 });
 
+// Tool: unread email listing with previews and lightweight classification.
 server.tool(
   "email_list_unread",
   "List unread emails from the configured IONOS inbox without modifying mailbox state.",
@@ -222,7 +257,7 @@ server.tool(
     limit: z.number().int().min(1).max(50).default(10),
   },
   async (input) => {
-    const { limit } = LimitSchema.parse(input);
+    const { limit } = input;
     const emails = await fetchUnreadMessages(limit);
 
     if (!emails.length) {
@@ -237,12 +272,14 @@ server.tool(
       preview: email.preview,
       hasAttachments: email.hasAttachments,
       attachments: email.attachments,
+      category: email.category,
     }));
 
     return textResult(JSON.stringify(payload, null, 2));
   }
 );
 
+// Tool: same-day digest built from unread emails only.
 server.tool(
   "email_digest_today",
   "Summarize unread emails from today in the configured IONOS inbox.",
@@ -250,9 +287,7 @@ server.tool(
     limit: z.number().int().min(1).max(50).default(20),
   },
   async (input) => {
-    const { limit } = LimitSchema.extend({
-      limit: z.number().int().min(1).max(50).default(20),
-    }).parse(input);
+    const { limit } = input;
     const emails = await fetchUnreadMessages(limit);
     const todaysEmails = emails.filter((email) => isSameLocalDay(email.date));
 
@@ -268,7 +303,7 @@ server.tool(
       const summary = summarizeBody(email.body);
       const urgency = urgencyHint(email);
       lines.push(
-        `- [${urgency}] ${email.from} | ${email.subject} | ${summary}`
+        `- [${urgency}] [${email.category}] ${email.from} | ${email.subject} | ${summary}`
       );
     }
 
@@ -278,6 +313,7 @@ server.tool(
 
 const transport = new StdioServerTransport();
 
+// Start the MCP server on stdio so Codex can connect to it as a local tool.
 try {
   await server.connect(transport);
 } catch (error) {

@@ -20,16 +20,18 @@ Read-only MCP server for the Infinisimo support inbox.
 3. Install dependencies with `npm install`.
 4. Start the server with `npm start`.
 
+Use `imap.ionos.de` as the IMAP host for this mailbox setup.
+
 ## Codex config
 
 Add a block like this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.ionos_inbox]
-command = "/home/vkasy/.nvm/versions/node/v22.22.2/bin/node"
-args = ["/mnt/c/Users/vkasy/OneDrive/Documents/Webdesign/CODEX_AGENTS_MCP/Codex_MCP_test/mcps/ionos-inbox/server.mjs"]
+command = "/absolute/path/to/node"
+args = ["/absolute/path/to/mcps/ionos-inbox/server.mjs"]
 enabled = true
 startup_timeout_sec = 60
 ```
 
-Update the `command` path if your Node installation differs.
+Update both the `command` and `args` paths to match your local Node installation and repository location.
