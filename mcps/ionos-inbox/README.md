@@ -4,8 +4,9 @@ Read-only MCP server for the Infinisimo support inbox.
 
 ## Tools
 
-- `email_list_unread(limit)`
-- `email_digest_today(limit)`
+- `email_list_unread(profile?, limit)`
+- `email_digest_today(profile?, limit)`
+- `email_digest_today_save(profile?, limit)`
 
 ## Safety
 
@@ -20,7 +21,9 @@ Read-only MCP server for the Infinisimo support inbox.
 3. Install dependencies with `npm install`.
 4. Start the server with `npm start`.
 
-Use `imap.ionos.de` as the IMAP host for this mailbox setup.
+The MCP now supports `business` and `private` mailbox profiles through `.env`, with `MAIL_DEFAULT_PROFILE` used when a tool call does not pass `profile`.
+
+Saved digest reports are written to `reports/` at the repository root with timestamped filenames, for example `reports/inbox-digest-2026-04-19-14-37-22.md`.
 
 ## Codex config
 

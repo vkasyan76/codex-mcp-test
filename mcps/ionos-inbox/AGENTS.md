@@ -2,7 +2,7 @@
 
 ## IONOS Inbox MCP
 
-This folder contains a read-only MCP server for the IONOS mailbox `info@infinisimo.com`.
+This folder contains a read-only MCP server for the configured business/private mail profiles.
 
 ## What Was Implemented
 
@@ -10,13 +10,14 @@ This folder contains a read-only MCP server for the IONOS mailbox `info@infinisi
 - IMAP access using `imapflow`
 - email parsing using `mailparser`
 - environment loading from local `.env`
-- two MCP tools:
-  - `email_list_unread(limit)`
-  - `email_digest_today(limit)`
+- three MCP tools with optional `profile` input:
+  - `email_list_unread(profile, limit)`
+  - `email_digest_today(profile, limit)`
+  - `email_digest_today_save(profile, limit)`
 
 ## Current Behavior
 
-### `email_list_unread(limit)`
+### `email_list_unread(profile, limit)`
 
 Lists unread emails from the configured mailbox without changing mailbox state.
 
@@ -32,7 +33,7 @@ Returned fields:
 - `hasAttachments`
 - `attachments`
 
-### `email_digest_today(limit)`
+### `email_digest_today(profile, limit)`
 
 Builds a simple digest of unread emails dated today.
 
@@ -43,6 +44,17 @@ Returned output:
 - total unread emails from today
 - bullet list summary
 - simple urgency hint: `high`, `medium`, or `normal`
+
+### `email_digest_today_save(profile, limit)`
+
+Builds the same same-day digest and saves it as a markdown report.
+
+Behavior:
+
+- writes reports into `reports/` at the repo root
+- uses timestamped filenames to avoid overwriting previous runs
+- falls back to a numeric suffix if two saves happen in the same second
+- writes the active profile and mailbox address into the report header
 
 ## Safety Rules
 
@@ -65,16 +77,24 @@ Returned output:
 
 ## Environment Variables
 
-Expected in `.env`:
+Current example shape in `.env`:
 
 ```env
-IONOS_EMAIL=info@infinisimo.com
-IONOS_PASSWORD=...
-IONOS_IMAP_HOST=imap.ionos.de
-IONOS_IMAP_PORT=993
-IONOS_IMAP_SECURE=true
-IONOS_MAILBOX=INBOX
-IONOS_MAX_BODY_CHARS=4000
+MAIL_DEFAULT_PROFILE=private
+MAIL_MAILBOX=INBOX
+MAIL_MAX_BODY_CHARS=4000
+
+MAIL_EMAIL_BUSINESS=info@infinisimo.com
+MAIL_PASSWORD_BUSINESS=...
+MAIL_IMAP_HOST_BUSINESS=imap.ionos.de
+MAIL_IMAP_PORT_BUSINESS=993
+MAIL_IMAP_SECURE_BUSINESS=true
+
+MAIL_EMAIL_PRIVATE=vkasyan@gmx.de
+MAIL_PASSWORD_PRIVATE=...
+MAIL_IMAP_HOST_PRIVATE=imap.gmx.net
+MAIL_IMAP_PORT_PRIVATE=993
+MAIL_IMAP_SECURE_PRIVATE=true
 ```
 
 ## Important Implementation Notes
@@ -82,6 +102,8 @@ IONOS_MAX_BODY_CHARS=4000
 - `.env` is loaded relative to `server.mjs`, not the process working directory
 - this fix was necessary because Codex launches MCP servers from a different working directory
 - German IONOS mailbox access is configured and documented with `imap.ionos.de`
+- the checked-in `.env.example` now documents business/private mail profiles with `private` as the example default
+- each tool call resolves the active mailbox profile once and passes it through the fetch/save helpers
 
 ## Verified Working
 
