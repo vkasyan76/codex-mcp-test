@@ -9,6 +9,12 @@ import { simpleParser } from "mailparser";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  buildImapClientOptions,
+  loadConfigFromEnv,
+  PROFILE_SCHEMA,
+  resolveMailboxProfile,
+} from "./mailbox-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,64 +22,8 @@ const __dirname = path.dirname(__filename);
 // Load mailbox credentials and runtime options from the local MCP folder.
 dotenv.config({ path: path.join(__dirname, ".env") });
 
-// Shared runtime config plus profile-specific mailbox settings.
-const PROFILE_SCHEMA = z.enum(["business", "private"]);
-
-const ENV_SCHEMA = z.object({
-  MAIL_DEFAULT_PROFILE: PROFILE_SCHEMA.default("private"),
-  MAIL_MAILBOX: z.string().min(1).default("INBOX"),
-  MAIL_MAX_BODY_CHARS: z.coerce.number().int().positive().default(4000),
-
-  MAIL_EMAIL_BUSINESS: z.string().min(1),
-  MAIL_PASSWORD_BUSINESS: z.string().min(1),
-  MAIL_IMAP_HOST_BUSINESS: z.string().min(1).default("imap.ionos.de"),
-  MAIL_IMAP_PORT_BUSINESS: z.coerce.number().int().positive().default(993),
-  MAIL_IMAP_SECURE_BUSINESS: z
-    .string()
-    .default("true")
-    .transform((value) => value.toLowerCase() !== "false"),
-
-  MAIL_EMAIL_PRIVATE: z.string().min(1),
-  MAIL_PASSWORD_PRIVATE: z.string().min(1),
-  MAIL_IMAP_HOST_PRIVATE: z.string().min(1).default("imap.gmx.net"),
-  MAIL_IMAP_PORT_PRIVATE: z.coerce.number().int().positive().default(993),
-  MAIL_IMAP_SECURE_PRIVATE: z
-    .string()
-    .default("true")
-    .transform((value) => value.toLowerCase() !== "false"),
-});
-
 function loadConfig() {
-  return ENV_SCHEMA.parse(process.env);
-}
-
-// Resolve one active mailbox profile per tool call and pass it through the flow.
-function resolveMailboxProfile(config, requestedProfile) {
-  const profile = requestedProfile || config.MAIL_DEFAULT_PROFILE;
-
-  if (profile === "business") {
-    return {
-      profile,
-      email: config.MAIL_EMAIL_BUSINESS,
-      password: config.MAIL_PASSWORD_BUSINESS,
-      host: config.MAIL_IMAP_HOST_BUSINESS,
-      port: config.MAIL_IMAP_PORT_BUSINESS,
-      secure: config.MAIL_IMAP_SECURE_BUSINESS,
-      mailbox: config.MAIL_MAILBOX,
-      maxBodyChars: config.MAIL_MAX_BODY_CHARS,
-    };
-  }
-
-  return {
-    profile,
-    email: config.MAIL_EMAIL_PRIVATE,
-    password: config.MAIL_PASSWORD_PRIVATE,
-    host: config.MAIL_IMAP_HOST_PRIVATE,
-    port: config.MAIL_IMAP_PORT_PRIVATE,
-    secure: config.MAIL_IMAP_SECURE_PRIVATE,
-    mailbox: config.MAIL_MAILBOX,
-    maxBodyChars: config.MAIL_MAX_BODY_CHARS,
-  };
+  return loadConfigFromEnv(process.env);
 }
 
 // Helpers for turning raw email bodies into compact, readable text output.
@@ -288,16 +238,7 @@ async function saveDigestReport(digestText, limit, mailboxProfile) {
 
 // Open the mailbox in read-only mode for every tool call.
 async function withMailbox(mailboxProfile, callback) {
-  const client = new ImapFlow({
-    host: mailboxProfile.host,
-    port: mailboxProfile.port,
-    secure: mailboxProfile.secure,
-    auth: {
-      user: mailboxProfile.email,
-      pass: mailboxProfile.password,
-    },
-    logger: false,
-  });
+  const client = new ImapFlow(buildImapClientOptions(mailboxProfile));
 
   try {
     await client.connect();
