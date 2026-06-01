@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { z } from "zod";
 
 export const PROFILE_SCHEMA = z.enum(["business", "private"]);
@@ -183,6 +185,10 @@ export function toSafeMailboxMetadata(mailbox, { includeEmail = false } = {}) {
   }
 
   return metadata;
+}
+
+export function resolveReportsDir(config, baseDir) {
+  return path.resolve(baseDir, config.MAIL_REPORTS_DIR);
 }
 
 export function buildImapClientOptions(mailboxProfile) {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -7,6 +8,7 @@ import {
   resolveConfiguredMailbox,
   resolveConfiguredMailboxes,
   resolveMailboxProfile,
+  resolveReportsDir,
   toSafeMailboxMetadata,
 } from "../mailbox-config.mjs";
 
@@ -145,6 +147,30 @@ test("mail report directory defaults and can be overridden", () => {
     }).MAIL_REPORTS_DIR,
     "../custom-reports"
   );
+});
+
+test("report directory resolves relative to the MCP folder", () => {
+  const baseDir = path.join("repo", "mcps", "ionos-inbox");
+  const config = loadConfigFromEnv({
+    ...BASE_ENV,
+    MAIL_REPORTS_DIR: "../custom-reports",
+  });
+
+  assert.equal(
+    resolveReportsDir(config, baseDir),
+    path.resolve(baseDir, "../custom-reports")
+  );
+});
+
+test("absolute report directory is preserved", () => {
+  const baseDir = path.join("repo", "mcps", "ionos-inbox");
+  const absoluteDir = path.resolve("mail-reports");
+  const config = loadConfigFromEnv({
+    ...BASE_ENV,
+    MAIL_REPORTS_DIR: absoluteDir,
+  });
+
+  assert.equal(resolveReportsDir(config, baseDir), absoluteDir);
 });
 
 test("configured mailbox missing required fields throws a clear error", () => {

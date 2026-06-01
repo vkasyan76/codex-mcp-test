@@ -14,6 +14,7 @@ import {
   loadConfigFromEnv,
   PROFILE_SCHEMA,
   resolveMailboxProfile,
+  resolveReportsDir,
 } from "./mailbox-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -211,8 +212,7 @@ async function getUniqueReportPath(baseDir, baseName) {
   }
 }
 
-async function saveDigestReport(digestText, limit, mailboxProfile) {
-  const reportsDir = path.resolve(__dirname, "../../reports");
+async function saveDigestReport(digestText, limit, mailboxProfile, reportsDir) {
   const generatedAt = new Date();
   const timestamp = formatTimestampForFile(generatedAt);
 
@@ -386,7 +386,12 @@ server.tool(
       return textResult("No unread emails from today.");
     }
 
-    const reportPath = await saveDigestReport(digestText, limit, mailboxProfile);
+    const reportPath = await saveDigestReport(
+      digestText,
+      limit,
+      mailboxProfile,
+      resolveReportsDir(config, __dirname)
+    );
     return textResult(`Saved digest to ${reportPath}\n\n${digestText}`);
   }
 );
