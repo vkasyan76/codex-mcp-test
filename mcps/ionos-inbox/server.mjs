@@ -16,6 +16,7 @@ import {
   resolveMailboxProfile,
   resolveReportsDir,
 } from "./mailbox-config.mjs";
+import { createRuntimeMailTools } from "./mail-tools.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -309,6 +310,7 @@ const server = new McpServer({
   name: "ionos-inbox",
   version: "0.1.0",
 });
+const mailTools = createRuntimeMailTools({ mcpDir: __dirname });
 
 // Tool: unread email listing with previews and lightweight classification.
 server.tool(
@@ -393,6 +395,79 @@ server.tool(
       resolveReportsDir(config, __dirname)
     );
     return textResult(`Saved digest to ${reportPath}\n\n${digestText}`);
+  }
+);
+
+server.tool(
+  "email_list_mailboxes",
+  "List configured mailboxes without exposing passwords or full email addresses by default.",
+  {
+    includeEmail: z.boolean().default(false),
+  },
+  async (input) => {
+    const mailboxes = await mailTools.listMailboxes(input);
+    return textResult(JSON.stringify(mailboxes, null, 2));
+  }
+);
+
+server.tool(
+  "email_list_unread_all",
+  "List unread emails from all configured mailboxes without modifying mailbox state.",
+  {
+    limitPerMailbox: z.number().int().min(1).max(100).default(25),
+    maxTotalEmails: z.number().int().min(1).max(500).default(250),
+    includeEmail: z.boolean().default(false),
+  },
+  async (input) => {
+    const emails = await mailTools.listUnreadAll(input);
+    return textResult(JSON.stringify(emails, null, 2));
+  }
+);
+
+server.tool(
+  "email_list_recent",
+  "List recent emails by mailbox and date range without modifying mailbox state.",
+  {
+    mailboxIds: z.array(z.string()).optional(),
+    days: z.number().int().min(1).max(30).default(3),
+    limitPerMailbox: z.number().int().min(1).max(100).default(50),
+    maxTotalEmails: z.number().int().min(1).max(500).default(250),
+    unreadOnly: z.boolean().default(false),
+    includeEmail: z.boolean().default(false),
+  },
+  async (input) => {
+    const emails = await mailTools.listRecent(input);
+    return textResult(JSON.stringify(emails, null, 2));
+  }
+);
+
+server.tool(
+  "email_read",
+  "Read one full normalized email by mailbox id, folder, and uid without modifying mailbox state.",
+  {
+    mailboxId: z.string().min(1),
+    folder: z.string().min(1).optional(),
+    uid: z.number().int().positive(),
+    includeEmail: z.boolean().default(false),
+  },
+  async (input) => {
+    const email = await mailTools.readEmail(input);
+    return textResult(email ? JSON.stringify(email, null, 2) : "Email not found.");
+  }
+);
+
+server.tool(
+  "email_triage_report",
+  "Create a grouped read-only triage report for unread and recent emails.",
+  {
+    days: z.number().int().min(1).max(30).default(3),
+    limitPerMailbox: z.number().int().min(1).max(100).default(50),
+    maxTotalEmails: z.number().int().min(1).max(500).default(250),
+    save: z.boolean().default(true),
+  },
+  async (input) => {
+    const report = await mailTools.triageReport(input);
+    return textResult(report.saved ? report.markdown : JSON.stringify(report.json, null, 2));
   }
 );
 
