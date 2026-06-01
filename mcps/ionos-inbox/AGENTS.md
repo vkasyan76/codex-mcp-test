@@ -274,6 +274,8 @@ Use plain JavaScript modules with JSDoc and `zod` where runtime validation matte
  * @property {string} nextStep
  * @property {"high" | "medium" | "low"} confidence
  * @property {"heuristic" | "ai" | "hybrid"} classifier
+ * @property {number} attentionScore
+ * @property {string} attentionReason
  */
 ```
 
