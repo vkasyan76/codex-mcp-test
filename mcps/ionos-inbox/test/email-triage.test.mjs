@@ -259,6 +259,26 @@ test("high importance is derived without urgent category", () => {
   assert.notEqual(result.category, "urgent");
 });
 
+test("urgency event signals do not set deadline metadata without deadline language", () => {
+  const security = classify({
+    subject: "Security alert",
+    body: "New login attempt detected.",
+  });
+  const failedPayment = classify({
+    subject: "Payment failed",
+    body: "Payment failed for your account.",
+  });
+
+  assert.equal(security.category, "account_security");
+  assert.equal(security.importance, "high");
+  assert.equal(security.hasDeadline, false);
+  assert.equal(security.deadline, null);
+  assert.equal(failedPayment.category, "billing_invoice");
+  assert.equal(failedPayment.importance, "high");
+  assert.equal(failedPayment.hasDeadline, false);
+  assert.equal(failedPayment.deadline, null);
+});
+
 test("promotional urgency does not become high importance", () => {
   const result = classify({
     subject: "Today only sale",

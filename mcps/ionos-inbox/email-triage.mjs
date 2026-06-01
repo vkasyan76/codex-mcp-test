@@ -65,7 +65,7 @@ function hasNeedsReplySignal(haystack) {
 function hasDeadlineSignal(haystack) {
   return includesPattern(
     haystack,
-    /\b(action required|requires action|deadline|due date|frist|mahnung|payment failed|security alert)\b/i
+    /\b(action required|requires action|deadline|due date|frist|mahnung)\b/i
   );
 }
 
