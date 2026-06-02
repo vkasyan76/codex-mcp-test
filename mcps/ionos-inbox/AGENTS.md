@@ -2,39 +2,63 @@
 
 ## IONOS Inbox MCP
 
-This folder contains a Node-based MCP server for read-only processing of multiple IMAP mailboxes used by Infinisimo and private email accounts.
+This folder contains a Node-based MCP server for read-only processing of
+multiple IMAP mailboxes used by Infinisimo and private email accounts.
 
-The practical goal is to build an effective mail-processing assistant:
+The practical goal is a safe mail-processing assistant that can:
 
+- list configured mailboxes
 - summarize unread and recently received emails
-- classify messages into useful action buckets
+- classify messages into action-oriented buckets
 - highlight what needs attention or reply
-- save readable and structured reports
+- save readable Markdown and structured JSON reports
 - later draft replies only after full email/thread context is read
 - send only after explicit user approval in a later phase
 
 ## Current State
 
-Implemented or verified locally:
+Implemented:
 
 - `server.mjs` runs the MCP server over stdio.
-- `imapflow` is used for IMAP access.
-- `mailparser` is used for parsing messages.
 - `.env` is loaded from this folder.
-- `mailbox-config.mjs` contains TLS-aware config helpers.
-- `test/mailbox-config.test.mjs` verifies TLS config behavior.
-- All configured mailboxes have been verified to connect with strict TLS.
+- `mailbox-config.mjs` resolves legacy profiles and `MAILBOXES=...` mailboxes.
+- `imap-reader.mjs` opens IMAP folders read-only.
+- `email-normalizer.mjs` parses raw messages into `EmailItem` objects.
+- `email-triage.mjs` classifies messages through the V1 heuristic boundary.
+- `report-writer.mjs` writes Markdown and JSON triage reports.
+- `mail-tools.mjs` orchestrates the V1 MCP tool behavior.
+- Node built-in tests cover config, IMAP reader behavior, normalization,
+  triage classification, report writing, and V1 tool orchestration.
+
+Verified local history:
+
+- All configured mailboxes previously connected with strict TLS.
 - Norton TLS interception was removed by uninstalling Norton; Windows Defender is active.
 
-Current legacy tools may still exist until V1 migration is complete:
+Legacy tools still exist temporarily:
 
 - `email_list_unread(profile, limit)`
 - `email_digest_today(profile, limit)`
 - `email_digest_today_save(profile, limit)`
 
+Do not refactor or remove the legacy tools in the same patch as V1 live
+verification. Handle legacy cleanup as a separate follow-up after V1 is accepted.
+
+## V1 MCP Tools
+
+- `email_list_mailboxes(includeEmail?)`
+- `email_list_unread_all(limitPerMailbox, maxTotalEmails, includeEmail?)`
+- `email_list_recent(mailboxIds?, days, limitPerMailbox, maxTotalEmails, unreadOnly, includeEmail?)`
+- `email_read(mailboxId, folder?, uid, includeEmail?)`
+- `email_triage_report(days, limitPerMailbox, maxTotalEmails, save)`
+
+List tools omit full message bodies and full mailbox email addresses by default.
+They include `maskedMailboxEmail`. `email_read` may include the selected email
+body because the caller supplies an exact source reference.
+
 ## Non-Negotiable Safety Rules
 
-V1 must be read-only.
+V1 is read-only.
 
 Allowed:
 
@@ -61,59 +85,56 @@ Do not print, log, commit, or include in reports:
 - passwords
 - app passwords
 - full credential-bearing config
+- full mailbox email addresses unless a tool explicitly receives `includeEmail: true`
 
-## V1 Target
+Reports must not include message bodies, recipients, mailbox emails, passwords,
+host/port credential config, or TLS config.
 
-Build a safe read-only email intelligence layer.
+## Mailbox Configuration
 
-V1 reads all configured mailboxes from the `MAILBOXES=...` format, fetches unread and recent mail, normalizes messages into a stable shape, classifies them, and saves a grouped triage report.
+V1 reads all configured mailboxes from `MAILBOXES=...` and prefixed mailbox
+variables:
 
-V1 MCP tools:
+```env
+MAILBOXES=info,support,private
 
-- `email_list_mailboxes`
-- `email_list_unread_all`
-- `email_list_recent`
-- `email_read`
-- `email_triage_report`
+MAILBOX_INFO_LABEL=Infinisimo Info
+MAILBOX_INFO_TYPE=company
+MAILBOX_INFO_EMAIL=info@example.com
+MAILBOX_INFO_PASSWORD=<password>
+MAILBOX_INFO_IMAP_HOST=imap.example.com
+MAILBOX_INFO_IMAP_PORT=993
+MAILBOX_INFO_IMAP_SECURE=true
+MAILBOX_INFO_FOLDER=INBOX
+```
 
-Post-V1 tools:
+`MAIL_REPORTS_DIR` controls report output. Relative paths are resolved from this
+MCP folder. The default is `../../reports`.
 
-- `email_search_context`
-- `email_read_thread`
-- `email_draft_reply`
-- `email_send_approved_reply`
+## Classification Rules
 
-## Important Design Corrections
-
-### Classifier Strategy
-
-The deterministic keyword classifier is only a V1 fallback and technical skeleton.
-
-Do not couple keyword classification deeply into MCP tools or report rendering. Keep classification behind a small module/function boundary so an AI structured classifier can later replace or augment it.
-
-Preferred boundary:
+Keep classification behind:
 
 ```js
 classifyEmail(email, options)
 ```
 
-The initial implementation may use heuristics, but callers should not care whether the result came from heuristics or AI.
-
-### Category vs Reply State
-
-Do not use `needs_reply` as the main classification concept.
+The V1 classifier is deterministic and heuristic, but callers must not depend on
+that implementation. Future AI or hybrid classification should be able to use
+the same boundary.
 
 Use separate fields:
 
-- `category`: what kind of email this is
+- `category`: email type
 - `needsReply`: whether the user likely needs to answer
-- `importance`: how important or urgent it is
+- `importance`: priority level
+- `attentionScore`: numeric scan priority from 0 to 100
+- `attentionReason`: short reason why the item is raised or buried
 
-An invoice, support request, legal email, or appointment email can all need a reply. This must remain filterable.
+Do not use `urgent` as a category. Urgency is represented through `importance`,
+`attentionScore`, and report sections.
 
-Do not use `urgent` as a category. Urgency is a priority/action state, not an email type. Represent urgency through `importance` and, if needed later, a derived `isUrgent` field or report section.
-
-Recommended categories:
+Categories:
 
 ```js
 const EMAIL_CATEGORIES = [
@@ -132,156 +153,9 @@ const EMAIL_CATEGORIES = [
 ];
 ```
 
-Use `needsReply: true` independently from category.
-
-Classification should use sender, subject, and body or preview together. Do not classify solely from the subject when body text is available.
-
-### Report Tables
-
-Markdown report tables must show both category and reply state.
-
-Use this column shape:
-
-```text
-Mailbox | Category | From | Subject | Received | Importance | Needs Reply | Summary | Next Step | Source
-```
-
-Grouping by section is still useful, but do not hide category or reply state inside the grouping.
-
-The `Urgent / Time-sensitive` report section should be derived from `importance: "critical"` or `importance: "high"` plus the message content. It should not depend on an `urgent` category.
-
-### Email Source References
-
-Every report item must preserve enough data to find the original message:
-
-```text
-mailboxId
-folder
-uid
-messageId
-from
-subject
-receivedAt
-```
-
-IMAP UIDs are folder-specific. `email_read` must accept folder:
-
-```json
-{
-  "mailboxId": "info",
-  "folder": "INBOX",
-  "uid": 12345
-}
-```
-
-`folder` may default to the mailbox configured folder, but the tool input and internal read function must support it.
-
-For V1 triage, normalized `body` may be trimmed by `MAIL_MAX_BODY_CHARS`. Post-V1 drafting must use full email or full thread content, not a triage-trimmed body.
-
-### Report Directory
-
-Make the report output directory configurable:
-
-```env
-MAIL_REPORTS_DIR=../../reports
-```
-
-Fallback may remain `../../reports`, resolved relative to this MCP folder. Avoid unclear saves under the wrong `reports/` directory.
-
-### Global Triage Cap
-
-Use both per-mailbox and global limits.
-
-Recommended defaults:
-
-```text
-limitPerMailbox: 50
-maxTotalEmails: 250
-```
-
-This prevents a daily triage run from processing hundreds of messages across many mailboxes.
-
-### Test Isolation
-
-Mailbox config tests must not accidentally read the real local `.env` or `process.env`.
-
-Pass explicit env objects in tests:
-
-```js
-const env = { ...BASE_ENV, MAILBOXES: "info,support" };
-const config = loadConfigFromEnv(env);
-const mailboxes = resolveConfiguredMailboxes(config, env);
-```
-
-Do not rely on `process.env` in tests unless the test is explicitly checking runtime loading.
-
-## Internal Data Shapes
-
-Use plain JavaScript modules with JSDoc and `zod` where runtime validation matters.
-
-```js
-/**
- * @typedef {"company" | "private" | "support" | "accounting" | "system" | "other"} MailboxType
- *
- * @typedef {Object} MailboxConfig
- * @property {string} id
- * @property {string} label
- * @property {MailboxType} type
- * @property {string} email
- * @property {string} password
- * @property {string} host
- * @property {number} port
- * @property {boolean} secure
- * @property {string} folder
- * @property {number} maxBodyChars
- * @property {boolean} tlsRejectUnauthorized
- */
-```
-
-```js
-/**
- * @typedef {Object} EmailItem
- * @property {string} mailboxId
- * @property {string} mailboxLabel
- * @property {string} mailboxType
- * @property {string} mailboxEmail
- * @property {string} folder
- * @property {number} uid
- * @property {string | null} messageId
- * @property {string} from
- * @property {string[]} to
- * @property {string[]} cc
- * @property {string} subject
- * @property {string | null} receivedAt
- * @property {boolean} isUnread
- * @property {string} preview
- * @property {string} body
- * @property {boolean} hasAttachments
- * @property {string[]} attachments
- */
-```
-
-```js
-/**
- * @typedef {Object} EmailTriageResult
- * @property {EmailItem} email
- * @property {string} category
- * @property {"critical" | "high" | "medium" | "low"} importance
- * @property {boolean} needsReply
- * @property {boolean} hasDeadline
- * @property {string | null} deadline
- * @property {string} summary
- * @property {string} nextStep
- * @property {"high" | "medium" | "low"} confidence
- * @property {"heuristic" | "ai" | "hybrid"} classifier
- * @property {number} attentionScore
- * @property {string} attentionReason
- */
-```
-
 ## Report Files
 
-Each triage run should save:
+Each saved triage run writes:
 
 ```text
 reports/email-triage-YYYY-MM-DD-HH-mm-ss.md
@@ -292,173 +166,55 @@ reports/latest.json
 
 Markdown is for reading. JSON is for later search, filtering, and assistant context.
 
-JSON report items must preserve classification and message metadata useful for future search:
+Markdown report table shape:
 
 ```text
-category
-importance
-needsReply
-hasDeadline
-deadline
-summary
-nextStep
-confidence
-classifier
-isUnread
-hasAttachments
-attachments
-source.mailboxId
-source.folder
-source.uid
-source.messageId
-source.from
-source.subject
-source.receivedAt
+Mailbox | Score | Reason | Category | From | Subject | Received | Importance | Needs Reply | Summary | Next Step | Source
 ```
 
-## Recommended Module Split
+The `Top Attention / Time-sensitive` section is a duplicate spotlight section.
+It is derived from:
+
+```text
+attentionScore >= 70 OR importance is high/critical
+```
+
+It must not depend on an `urgent` category.
+
+Every report item must preserve source metadata:
+
+```text
+mailboxId
+mailboxLabel
+folder
+uid
+messageId
+from
+subject
+receivedAt
+```
+
+Source reference format:
+
+```text
+mailboxId=info folder=INBOX uid=12345 messageId=<abc@example.com>
+```
+
+## Module Boundaries
 
 Prefer focused modules over growing `server.mjs`.
 
-- `server.mjs`: MCP startup and tool registration only
+- `server.mjs`: MCP startup and tool registration
 - `mailbox-config.mjs`: env parsing and mailbox resolution
 - `imap-reader.mjs`: read-only IMAP access
 - `email-normalizer.mjs`: parse raw messages into `EmailItem`
 - `email-triage.mjs`: classifier boundary and fallback heuristics
 - `report-writer.mjs`: Markdown/JSON rendering and persistence
-- `mail-tools.mjs`: orchestration used by MCP tools
+- `mail-tools.mjs`: orchestration used by V1 MCP tools
 - `test/*.test.mjs`: Node built-in test coverage
 
-## Implementation Tasks
-
-Implement task-by-task with tests first.
-
-1. Expand mailbox config for `MAILBOXES=...`.
-   - Add explicit env-object tests.
-   - Preserve legacy `business/private` helpers only as compatibility support.
-   - Include `MAIL_REPORTS_DIR`.
-
-2. Add safe read-only IMAP layer.
-   - Always open mailbox read-only.
-   - Support unread, recent, and single-message read.
-   - Support `folder` for single-message read.
-
-3. Add email normalization.
-   - Normalize sender, recipients, subject, body, attachments, flags, source references.
-   - Keep body trimming configurable through `MAIL_MAX_BODY_CHARS`.
-
-4. Add classifier boundary.
-   - Implement deterministic fallback classifier.
-   - Keep it replaceable by future AI structured classification.
-   - Keep `needsReply` independent from `category`.
-
-5. Add report writer.
-   - Use grouped Markdown.
-   - Include `Category` and `Needs Reply` columns.
-   - Save Markdown and JSON.
-   - Update `latest.md` and `latest.json`.
-
-6. Register V1 MCP tools.
-   - `email_list_mailboxes`
-   - `email_list_unread_all`
-   - `email_list_recent`
-   - `email_read`
-   - `email_triage_report`
-   - Include `limitPerMailbox` and `maxTotalEmails` where relevant.
-
-7. Verify against local mailboxes.
-   - Run automated tests.
-   - Run syntax check.
-   - Smoke test all configured mailboxes.
-   - Generate a small report.
-   - Confirm no secrets appear in output.
-
-## MCP Tool Contracts
-
-### `email_list_mailboxes`
-
-Lists configured mailboxes without passwords.
-
-Full email addresses should not be exposed by default. Return masked mailbox addresses unless the caller explicitly passes `includeEmail: true`.
-
-Input:
-
-```json
-{
-  "includeEmail": false
-}
-```
-
-Output fields:
-
-```text
-id
-label
-type
-maskedEmail
-email, only when includeEmail=true
-host
-folder
-status, when connection checking is implemented
-```
-
-### `email_list_unread_all`
-
-Input:
-
-```json
-{
-  "limitPerMailbox": 25,
-  "maxTotalEmails": 250
-}
-```
-
-Returns normalized unread email items from all configured mailboxes.
-
-### `email_list_recent`
-
-Input:
-
-```json
-{
-  "mailboxIds": ["info", "support"],
-  "days": 3,
-  "limitPerMailbox": 50,
-  "maxTotalEmails": 250,
-  "unreadOnly": false
-}
-```
-
-Returns normalized recent email items.
-
-### `email_read`
-
-Input:
-
-```json
-{
-  "mailboxId": "info",
-  "folder": "INBOX",
-  "uid": 12345
-}
-```
-
-Returns one normalized full email without changing read state.
-
-### `email_triage_report`
-
-Input:
-
-```json
-{
-  "days": 3,
-  "limitPerMailbox": 50,
-  "maxTotalEmails": 250,
-  "save": true
-}
-```
-
-Returns or saves a grouped triage report. The report must include category, importance, needs-reply state, summary, next step, confidence, and source reference.
+Known follow-up: legacy digest orchestration still exists in `server.mjs`.
+Move or remove that only after V1 live verification is accepted.
 
 ## Acceptance Checklist
 
@@ -466,17 +222,18 @@ V1 is complete only when:
 
 - `node --test` passes.
 - `npm run check` passes.
-- `email_list_mailboxes` returns all configured mailbox ids without passwords.
-- `email_list_unread_all` returns unread items across multiple mailboxes.
-- `email_list_recent` returns recent items from the requested time window.
+- `email_list_mailboxes` returns all configured mailbox IDs without passwords.
+- `email_list_unread_all` returns unread items or an empty array without failure.
+- `email_list_recent` returns recent items or an empty array without failure.
 - `email_read` returns one full normalized email by `mailboxId`, `folder`, and `uid`.
 - `email_triage_report` saves Markdown and JSON reports.
 - `reports/latest.md` and `reports/latest.json` are updated.
 - Every report item has `mailboxId`, `folder`, `uid`, and `messageId`.
-- JSON report items include `classifier`, `hasDeadline`, `deadline`, `isUnread`, `hasAttachments`, and `attachments`.
-- Report tables include `Category` and `Needs Reply`.
+- JSON report items include `classifier`, `hasDeadline`, `deadline`, `isUnread`,
+  `hasAttachments`, and `attachments`.
+- Report tables include `Score`, `Reason`, `Category`, and `Needs Reply`.
 - `needsReply` is independent from `category`.
-- `urgent` is not used as a category; urgency is represented through `importance` or derived report sections.
+- `urgent` is not used as a category.
 - `maxTotalEmails` limits large runs.
 - `MAIL_REPORTS_DIR` is honored when set.
 - No V1 tool sends, drafts, moves, deletes, archives, flags, or marks mail as read.
@@ -486,9 +243,10 @@ V1 is complete only when:
 
 Do these only after the read-only V1 is accepted:
 
-1. `email_search_context`: search saved JSON reports first, then optionally fetch live IMAP data.
-2. AI structured classification: replace or augment heuristic classifier through the classifier boundary.
-3. `email_read_thread`: reconstruct thread context before drafting.
-4. `email_draft_reply`: generate reply text only after full email or thread read.
-5. `email_send_approved_reply`: send only after explicit user approval and exact recipient/body confirmation.
-6. Optional local UI: add only after MCP tools and reports are reliable.
+1. Clean up or remove legacy server-side digest orchestration.
+2. `email_search_context`: search saved JSON reports first, then optionally fetch live IMAP data.
+3. AI structured classification: replace or augment heuristic classification.
+4. `email_read_thread`: reconstruct thread context before drafting.
+5. `email_draft_reply`: generate reply text only after full email or thread read.
+6. `email_send_approved_reply`: send only after explicit user approval and exact recipient/body confirmation.
+7. Optional local UI: add only after MCP tools and reports are reliable.
