@@ -64,6 +64,43 @@ test("classifies security and login messages as account security", () => {
   assert.match(result.attentionReason, /security/i);
 });
 
+test("classifies real 2fa code messages as account security", () => {
+  const result = classify({
+    subject: "Your 2FA code",
+    body: "Your 2FA code is 123456. Do not share this verification code.",
+  });
+
+  assert.equal(result.category, "account_security");
+  assert.equal(result.importance, "high");
+  assert.equal(result.attentionScore >= 90, true);
+});
+
+test("security alerts with tracking links remain account security", () => {
+  const result = classify({
+    subject: "Security alert: password reset requested",
+    body: "A password reset was requested. Review this security alert. https://example.com/track?u=%252Fapi%252Fv1%2FA",
+  });
+
+  assert.equal(result.category, "account_security");
+  assert.equal(result.importance, "high");
+  assert.equal(result.attentionScore >= 90, true);
+});
+
+test("encoded newsletter links do not trigger account security", () => {
+  const result = classify({
+    from: "tennis.de <news@mail.tennis.de>",
+    subject: "Das sind die neuen Deutschen Meister der Junior:innen",
+    body: "tennis.de Newsletter. Lesen Sie die aktuellen Sportergebnisse. Tracking link https://public-eur.mkt.dynamics.com/api/v1.0/orgs/250d515e?u=%252Fapi%252Fv1%2FA%2FA. Unsubscribe here.",
+  });
+
+  assert.equal(result.category, "newsletter_fyi");
+  assert.equal(result.importance, "low");
+  assert.equal(result.needsReply, false);
+  assert.equal(result.attentionScore <= 9, true);
+  assert.notEqual(result.category, "account_security");
+  assert.doesNotMatch(result.attentionReason, /security/i);
+});
+
 test("classifies newsletters as low-attention newsletter fyi", () => {
   const result = classify({
     from: "Newsletter <news@example.com>",

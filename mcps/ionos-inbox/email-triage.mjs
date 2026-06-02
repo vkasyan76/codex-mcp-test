@@ -55,6 +55,13 @@ function buildHaystack(email) {
     .toLowerCase();
 }
 
+function stripLinkNoise(value) {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/www\.\S+/gi, " ")
+    .replace(/%[0-9a-f]{2}/gi, " ");
+}
+
 function hasNeedsReplySignal(haystack) {
   return includesPattern(
     haystack,
@@ -83,6 +90,13 @@ function hasAutomatedNoiseSignal(haystack, from) {
     /\b(automated message|no action required)\b/i.test(haystack) ||
     from.includes("noreply") ||
     from.includes("no-reply")
+  );
+}
+
+function hasSecuritySignal(haystack) {
+  return (
+    /\b(security alert|login attempt|new login|password reset|verification code|passkey)\b/i.test(haystack) ||
+    /\b(2fa|two factor)\s+(code|enabled|disabled|login|verification|authentication)\b/i.test(haystack)
   );
 }
 
@@ -133,6 +147,7 @@ function result(email, values) {
 
 export function classifyEmail(email, options = {}) {
   const haystack = buildHaystack(email);
+  const securityHaystack = stripLinkNoise(haystack);
   const from = String(email.from || "").toLowerCase();
   const summary = summarizeBody(email.body || email.preview || email.subject);
   const needsReply = hasNeedsReplySignal(haystack);
@@ -151,7 +166,7 @@ export function classifyEmail(email, options = {}) {
     });
   }
 
-  if (/\b(security alert|login attempt|new login|password reset|2fa|two factor|verification code|passkey)\b/i.test(haystack)) {
+  if (hasSecuritySignal(securityHaystack)) {
     return result(email, {
       ...base,
       category: "account_security",
