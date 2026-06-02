@@ -11,7 +11,7 @@ The practical goal is a safe mail-processing assistant that can:
 - summarize unread and recently received emails
 - classify messages into action-oriented buckets
 - highlight what needs attention or reply
-- save readable Markdown and structured JSON reports
+- save readable Markdown, structured JSON, and Excel-openable CSV reports
 - later draft replies only after full email/thread context is read
 - send only after explicit user approval in a later phase
 
@@ -25,8 +25,9 @@ Implemented:
 - `imap-reader.mjs` opens IMAP folders read-only.
 - `email-normalizer.mjs` parses raw messages into `EmailItem` objects.
 - `email-triage.mjs` classifies messages through the V1 heuristic boundary.
-- `report-writer.mjs` writes Markdown and JSON triage reports.
+- `report-writer.mjs` writes Markdown, JSON, and CSV triage reports.
 - `mail-tools.mjs` orchestrates the V1 MCP tool behavior.
+- `legacy-mail-tools.mjs` contains the temporary legacy unread/digest implementation.
 - Node built-in tests cover config, IMAP reader behavior, normalization,
   triage classification, report writing, and V1 tool orchestration.
 
@@ -41,8 +42,8 @@ Legacy tools still exist temporarily:
 - `email_digest_today(profile, limit)`
 - `email_digest_today_save(profile, limit)`
 
-Do not refactor or remove the legacy tools in the same patch as V1 live
-verification. Handle legacy cleanup as a separate follow-up after V1 is accepted.
+Do not remove the legacy tools until the V1 tools have been accepted in normal
+use.
 
 ## V1 MCP Tools
 
@@ -67,7 +68,7 @@ Allowed:
 - list recent messages
 - read one selected email
 - summarize and classify locally
-- save local Markdown and JSON reports
+- save local Markdown, JSON, and CSV reports
 
 Forbidden in V1:
 
@@ -109,7 +110,9 @@ MAILBOX_INFO_FOLDER=INBOX
 ```
 
 `MAIL_REPORTS_DIR` controls report output. Relative paths are resolved from this
-MCP folder. The default is `../../reports`.
+MCP folder. The default is `../../reports`. Keep custom in-repo report folders
+under `reports/` so generated exports remain covered by `.gitignore`; for
+example, use `MAIL_REPORTS_DIR=../../reports/email-triage`.
 
 ## Classification Rules
 
@@ -160,13 +163,17 @@ Each saved triage run writes:
 ```text
 reports/email-triage-YYYY-MM-DD-HH-mm-ss.md
 reports/email-triage-YYYY-MM-DD-HH-mm-ss.json
+reports/email-triage-YYYY-MM-DD-HH-mm-ss.csv
 reports/latest.md
 reports/latest.json
+reports/latest.csv
 ```
 
-Markdown is for reading. JSON is for later search, filtering, and assistant context.
+Markdown is for reading. JSON is for later search, filtering, and assistant
+context. CSV is an Excel-openable export; V1 does not create binary `.xlsx`
+files.
 
-Markdown report table shape:
+Markdown and CSV report table shape:
 
 ```text
 Mailbox | Score | Reason | Category | From | Subject | Received | Importance | Needs Reply | Summary | Next Step | Source
@@ -209,12 +216,13 @@ Prefer focused modules over growing `server.mjs`.
 - `imap-reader.mjs`: read-only IMAP access
 - `email-normalizer.mjs`: parse raw messages into `EmailItem`
 - `email-triage.mjs`: classifier boundary and fallback heuristics
-- `report-writer.mjs`: Markdown/JSON rendering and persistence
+- `report-writer.mjs`: Markdown/JSON/CSV rendering and persistence
+- `legacy-mail-tools.mjs`: temporary legacy unread/digest fallback behavior
 - `mail-tools.mjs`: orchestration used by V1 MCP tools
 - `test/*.test.mjs`: Node built-in test coverage
 
-Known follow-up: legacy digest orchestration still exists in `server.mjs`.
-Move or remove that only after V1 live verification is accepted.
+Legacy digest orchestration is kept out of `server.mjs`; remove the legacy tools
+only after the V1 tools are accepted in normal use.
 
 ## Acceptance Checklist
 
@@ -226,8 +234,8 @@ V1 is complete only when:
 - `email_list_unread_all` returns unread items or an empty array without failure.
 - `email_list_recent` returns recent items or an empty array without failure.
 - `email_read` returns one full normalized email by `mailboxId`, `folder`, and `uid`.
-- `email_triage_report` saves Markdown and JSON reports.
-- `reports/latest.md` and `reports/latest.json` are updated.
+- `email_triage_report` saves Markdown, JSON, and CSV reports.
+- `reports/latest.md`, `reports/latest.json`, and `reports/latest.csv` are updated.
 - Every report item has `mailboxId`, `folder`, `uid`, and `messageId`.
 - JSON report items include `classifier`, `hasDeadline`, `deadline`, `isUnread`,
   `hasAttachments`, and `attachments`.

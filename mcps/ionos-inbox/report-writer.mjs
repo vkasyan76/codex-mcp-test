@@ -91,6 +91,15 @@ function markdownCell(value) {
     .replace(/\r?\n/g, " ");
 }
 
+function csvCell(value) {
+  const raw = String(value ?? "");
+  const normalized = raw.replace(/\r?\n/g, " ");
+  if (/[",\r\n]/.test(raw)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
 function yesNo(value) {
   return value ? "yes" : "no";
 }
@@ -174,6 +183,23 @@ function buildTableRows(results) {
   );
 }
 
+function resultToReportRow(result) {
+  return [
+    result.email?.mailboxLabel,
+    attentionScore(result),
+    result.attentionReason || "",
+    result.category,
+    result.email?.from,
+    result.email?.subject,
+    result.email?.receivedAt || "",
+    result.importance,
+    yesNo(result.needsReply),
+    result.summary,
+    result.nextStep,
+    sourceReference(result.email),
+  ];
+}
+
 export function buildReportMarkdown({ generatedAt, mailboxesChecked, results }) {
   const totals = buildTotals(results);
   const lines = [
@@ -211,28 +237,55 @@ export function buildReportMarkdown({ generatedAt, mailboxesChecked, results }) 
   return lines.join("\n");
 }
 
+export function buildReportCsv({ results }) {
+  const header = [
+    "Mailbox",
+    "Score",
+    "Reason",
+    "Category",
+    "From",
+    "Subject",
+    "Received",
+    "Importance",
+    "Needs Reply",
+    "Summary",
+    "Next Step",
+    "Source",
+  ];
+  const rows = [header, ...sortResults(results).map(resultToReportRow)];
+  return `${rows.map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+}
+
 export async function saveReport({ reportsDir, generatedAt = new Date(), mailboxesChecked, results }) {
   await fs.mkdir(reportsDir, { recursive: true });
 
   const baseName = `email-triage-${formatTimestampForFile(generatedAt)}`;
   const markdown = buildReportMarkdown({ generatedAt, mailboxesChecked, results });
   const json = buildReportJson({ generatedAt, mailboxesChecked, results });
+  const csv = buildReportCsv({ generatedAt, mailboxesChecked, results });
   const markdownPath = path.join(reportsDir, `${baseName}.md`);
   const jsonPath = path.join(reportsDir, `${baseName}.json`);
+  const csvPath = path.join(reportsDir, `${baseName}.csv`);
   const latestMarkdownPath = path.join(reportsDir, "latest.md");
   const latestJsonPath = path.join(reportsDir, "latest.json");
+  const latestCsvPath = path.join(reportsDir, "latest.csv");
 
   await fs.writeFile(markdownPath, markdown, "utf8");
   await fs.writeFile(jsonPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
+  await fs.writeFile(csvPath, csv, "utf8");
   await fs.writeFile(latestMarkdownPath, markdown, "utf8");
   await fs.writeFile(latestJsonPath, `${JSON.stringify(json, null, 2)}\n`, "utf8");
+  await fs.writeFile(latestCsvPath, csv, "utf8");
 
   return {
     markdownPath,
     jsonPath,
+    csvPath,
     latestMarkdownPath,
     latestJsonPath,
+    latestCsvPath,
     markdown,
     json,
+    csv,
   };
 }

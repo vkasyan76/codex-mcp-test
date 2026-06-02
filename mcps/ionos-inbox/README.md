@@ -86,30 +86,36 @@ defaults to the configured mailbox folder.
 
 Fetches unread and recent emails, dedupes by `mailboxId + folder + uid`,
 classifies each item, and returns a grouped triage report. When `save` is true,
-the tool saves Markdown and JSON reports and returns Markdown. When `save` is
+the tool saves Markdown, JSON, and CSV reports and returns Markdown. When `save` is
 false, it returns report-safe JSON.
 
 ## Report Files
 
 Triage reports are saved under `MAIL_REPORTS_DIR`, resolved relative to this MCP
 folder when the value is relative. The default is `../../reports`, which writes
-to the repository-level `reports/` directory.
+to the repository-level `reports/` directory. Keep custom in-repo report folders
+under `reports/` so generated exports stay covered by `.gitignore`.
 
 Each saved run writes:
 
 ```text
 reports/email-triage-YYYY-MM-DD-HH-mm-ss.md
 reports/email-triage-YYYY-MM-DD-HH-mm-ss.json
+reports/email-triage-YYYY-MM-DD-HH-mm-ss.csv
 reports/latest.md
 reports/latest.json
+reports/latest.csv
 ```
 
 Reports exclude full message bodies, full mailbox email addresses, passwords,
-host/port credential config, and TLS config. Markdown tables include:
+host/port credential config, and TLS config. Markdown tables and CSV exports use:
 
 ```text
 Mailbox | Score | Reason | Category | From | Subject | Received | Importance | Needs Reply | Summary | Next Step | Source
 ```
+
+The CSV files are Excel-openable text exports. Binary `.xlsx` files are not
+created in V1, which keeps report generation dependency-free.
 
 ## Legacy Tools
 
@@ -136,6 +142,8 @@ MAIL_MAILBOX=INBOX
 MAIL_MAX_BODY_CHARS=4000
 MAIL_TLS_REJECT_UNAUTHORIZED=true
 MAIL_REPORTS_DIR=../../reports
+# Optional private subfolder that remains ignored by Git:
+# MAIL_REPORTS_DIR=../../reports/email-triage
 
 MAILBOX_INFO_LABEL=Infinisimo Info
 MAILBOX_INFO_TYPE=company

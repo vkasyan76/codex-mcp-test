@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  buildReportCsv,
   buildReportJson,
   buildReportMarkdown,
   saveReport,
@@ -236,6 +237,29 @@ test("builds json preserving report-safe source and triage metadata", () => {
   });
 });
 
+test("builds excel-compatible csv with escaped cells", () => {
+  const csv = buildReportCsv({
+    generatedAt: GENERATED_AT,
+    mailboxesChecked: 1,
+    results: [
+      item({
+        summary: "Line one\nLine two",
+        nextStep: "Check A, B",
+        email: {
+          mailboxLabel: "Info",
+          subject: 'Invoice "May"',
+        },
+      }),
+    ],
+  });
+
+  assert.match(csv, /^Mailbox,Score,Reason,Category,From,Subject,Received,Importance,Needs Reply,Summary,Next Step,Source/m);
+  assert.match(csv, /"Invoice ""May"""/);
+  assert.match(csv, /"Line one Line two"/);
+  assert.match(csv, /"Check A, B"/);
+  assert.match(csv, /mailboxId=info folder=INBOX uid=123 messageId=<abc@example.com>/);
+});
+
 test("escapes markdown pipes and newlines in table cells", () => {
   const markdown = buildReportMarkdown({
     generatedAt: GENERATED_AT,
@@ -262,7 +286,8 @@ test("reports exclude mailbox body and credential-bearing config fields", () => 
   const results = [item()];
   const markdown = buildReportMarkdown({ generatedAt: GENERATED_AT, mailboxesChecked: 1, results });
   const jsonText = JSON.stringify(buildReportJson({ generatedAt: GENERATED_AT, mailboxesChecked: 1, results }));
-  const combined = `${markdown}\n${jsonText}`;
+  const csv = buildReportCsv({ generatedAt: GENERATED_AT, mailboxesChecked: 1, results });
+  const combined = `${markdown}\n${jsonText}\n${csv}`;
 
   for (const forbidden of [
     "mailbox-secret@example.com",
@@ -288,14 +313,19 @@ test("saves timestamped markdown and json reports plus latest files", async () =
 
   assert.equal(path.basename(saved.markdownPath), "email-triage-2026-05-31-10-00-00.md");
   assert.equal(path.basename(saved.jsonPath), "email-triage-2026-05-31-10-00-00.json");
+  assert.equal(path.basename(saved.csvPath), "email-triage-2026-05-31-10-00-00.csv");
   assert.equal(path.basename(saved.latestMarkdownPath), "latest.md");
   assert.equal(path.basename(saved.latestJsonPath), "latest.json");
+  assert.equal(path.basename(saved.latestCsvPath), "latest.csv");
 
   await fs.stat(saved.markdownPath);
   await fs.stat(saved.jsonPath);
+  await fs.stat(saved.csvPath);
   await fs.stat(saved.latestMarkdownPath);
   await fs.stat(saved.latestJsonPath);
+  await fs.stat(saved.latestCsvPath);
 
   assert.equal(await fs.readFile(saved.latestMarkdownPath, "utf8"), saved.markdown);
   assert.deepEqual(JSON.parse(await fs.readFile(saved.latestJsonPath, "utf8")), saved.json);
+  assert.equal(await fs.readFile(saved.latestCsvPath, "utf8"), saved.csv);
 });

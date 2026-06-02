@@ -3,4 +3,6 @@ node_modules/
 .env
 .env.*
 npm-debug.log*
+
+# Local email triage reports and Excel-openable CSV exports.
 reports/
